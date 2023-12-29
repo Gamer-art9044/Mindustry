@@ -16,10 +16,6 @@
     "address": ["de-free-01.hosts.optikservers.com:31528","de-prem-01.hosts.optikservers.com:35160", "de-prem-01.hosts.optikservers.com:35116", "de-prem-01.hosts.optikservers.com:35922"]
   },
   {
-    "name": "CMS",
-    "address": ["195.2.84.144","65.108.224.31:26165"]
-  },
-  {
     "name": "ShardDustry Eventos",
     "address": ["45.158.9.198:31719"]
   },
