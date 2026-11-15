@@ -1164,6 +1164,320 @@ public class LExecutor{
         }
     }
 
+    static String stringValue(LVar value){
+        if(value.isobj){
+            return value.objval instanceof String str
+                    ? str
+                    : PrintI.toString(value.objval);
+        }
+
+        double number = value.numval;
+        return Math.abs(number - Math.round(number)) < 0.00001
+                ? Long.toString(Math.round(number))
+                : Double.toString(number);
+    }
+
+    static void setStringValue(LVar output, CharSequence value){
+        if(output.isobj && output.objval instanceof String old && old.contentEquals(value)){
+            return;
+        }
+
+        output.setobj(value.toString());
+    }
+
+    static void setStringSlice(LVar output, String source, int start, int end){
+        if(output.isobj && output.objval instanceof String old &&
+                old.length() == end - start &&
+                source.regionMatches(start, old, 0, old.length())){
+            return;
+        }
+
+        output.setobj(source.substring(start, end));
+    }
+
+    public static class StrlenI implements LInstruction{
+        public LVar value, output;
+
+        public StrlenI(LVar value, LVar output){
+            this.value = value;
+            this.output = output;
+        }
+
+        @Override
+        public void run(LExecutor exec){
+            output.setnum(stringValue(value).length());
+        }
+    }
+
+    static class StringCache{
+        private final LVar[] inputs;
+        private final boolean[] objectInputs;
+        private final Object[] objectValues;
+        private final long[] numberValues;
+
+        private boolean valid;
+        private boolean cacheable;
+
+        private boolean outputObject;
+        private Object outputObjectValue;
+        private long outputNumberValue;
+
+        StringCache(LVar... inputs){
+            this.inputs = inputs;
+            objectInputs = new boolean[inputs.length];
+            objectValues = new Object[inputs.length];
+            numberValues = new long[inputs.length];
+        }
+
+        boolean restore(LVar output){
+            if(!valid) return false;
+
+            for(int i = 0; i < inputs.length; i++){
+                LVar input = inputs[i];
+
+                if(input.isobj != objectInputs[i]) return false;
+
+                if(input.isobj){
+                    if(input.objval != objectValues[i]) return false;
+                }else if(Double.doubleToLongBits(input.numval) != numberValues[i]){
+                    return false;
+                }
+            }
+
+            if(outputObject){
+                if(!output.isobj || output.objval != outputObjectValue){
+                    output.setobj(outputObjectValue);
+                }
+            }else{
+                if(output.isobj || Double.doubleToLongBits(output.numval) != outputNumberValue){
+                    output.setnum(Double.longBitsToDouble(outputNumberValue));
+                }
+            }
+
+            return true;
+        }
+
+        void capture(){
+            cacheable = true;
+
+            for(int i = 0; i < inputs.length; i++){
+                LVar input = inputs[i];
+
+                objectInputs[i] = input.isobj;
+
+                if(input.isobj){
+                    Object value = input.objval;
+                    objectValues[i] = value;
+
+                    if(value != null && !(value instanceof String)){
+                        cacheable = false;
+                    }
+                }else{
+                    numberValues[i] = Double.doubleToLongBits(input.numval);
+                }
+            }
+        }
+
+        void save(LVar output){
+            valid = cacheable;
+
+            if(!valid) return;
+
+            outputObject = output.isobj;
+
+            if(outputObject){
+                outputObjectValue = output.objval;
+            }else{
+                outputNumberValue = Double.doubleToLongBits(output.numval);
+            }
+        }
+    }
+
+    public static class ConcatI implements LInstruction{
+        public LVar a, b, output;
+        private final StringBuilder buffer = new StringBuilder();
+        private final StringCache cache;
+
+        public ConcatI(LVar a, LVar b, LVar output){
+            this.a = a;
+            this.b = b;
+            this.output = output;
+            cache = new StringCache(a, b);
+        }
+
+        @Override
+        public void run(LExecutor exec){
+            if(cache.restore(output)) return;
+
+            cache.capture();
+
+            buffer.setLength(0);
+            buffer.append(stringValue(a)).append(stringValue(b));
+
+            setStringValue(output, buffer);
+            cache.save(output);
+        }
+    }
+
+    public static class ReplaceI implements LInstruction{
+        public LVar value, target, replacement, output;
+        private final StringBuilder buffer = new StringBuilder();
+        private final StringCache cache;
+
+        public ReplaceI(LVar value, LVar target, LVar replacement, LVar output){
+            this.value = value;
+            this.target = target;
+            this.replacement = replacement;
+            this.output = output;
+            cache = new StringCache(value, target, replacement);
+        }
+
+        @Override
+        public void run(LExecutor exec){
+            if(cache.restore(output)) return;
+
+            cache.capture();
+
+            String source = stringValue(value);
+            String search = stringValue(target);
+            String replace = stringValue(replacement);
+
+            if(source.indexOf(search) == -1){
+                setStringValue(output, source);
+                cache.save(output);
+                return;
+            }
+
+            buffer.setLength(0);
+
+            if(search.isEmpty()){
+                buffer.append(replace);
+
+                for(int i = 0; i < source.length(); i++){
+                    buffer.append(source.charAt(i)).append(replace);
+                }
+            }else{
+                int start = 0;
+                int found;
+
+                while((found = source.indexOf(search, start)) != -1){
+                    buffer.append(source, start, found);
+                    buffer.append(replace);
+                    start = found + search.length();
+                }
+
+                buffer.append(source, start, source.length());
+            }
+
+            setStringValue(output, buffer);
+            cache.save(output);
+        }
+    }
+
+    public static class SplitI implements LInstruction{
+        public LVar value, separator, index, output;
+        private final StringCache cache;
+
+        public SplitI(LVar value, LVar separator, LVar index, LVar output){
+            this.value = value;
+            this.separator = separator;
+            this.index = index;
+            this.output = output;
+            cache = new StringCache(value, separator, index);
+        }
+
+        @Override
+        public void run(LExecutor exec){
+            if(cache.restore(output)) return;
+
+            cache.capture();
+
+            String source = stringValue(value);
+            String sep = stringValue(separator);
+            int wanted = index.numi();
+
+            if(wanted < 0){
+                setStringValue(output, "");
+                cache.save(output);
+                return;
+            }
+
+            if(sep.isEmpty()){
+                setStringValue(output, wanted == 0 ? source : "");
+                cache.save(output);
+                return;
+            }
+
+            int start = 0;
+            int part = 0;
+
+            while(true){
+                int end = source.indexOf(sep, start);
+
+                if(part == wanted){
+                    setStringSlice(output, source, start,
+                            end == -1 ? source.length() : end);
+                    cache.save(output);
+                    return;
+                }
+
+                if(end == -1) break;
+
+                start = end + sep.length();
+                part++;
+            }
+
+            setStringValue(output, "");
+            cache.save(output);
+        }
+    }
+
+    public static class ReverseI implements LInstruction{
+        public LVar value, output;
+        private final StringBuilder buffer = new StringBuilder();
+        private final StringCache cache;
+
+        public ReverseI(LVar value, LVar output){
+            this.value = value;
+            this.output = output;
+            cache = new StringCache(value);
+        }
+
+        @Override
+        public void run(LExecutor exec){
+            if(cache.restore(output)) return;
+
+            cache.capture();
+
+            buffer.setLength(0);
+            buffer.append(stringValue(value)).reverse();
+
+            setStringValue(output, buffer);
+            cache.save(output);
+        }
+    }
+
+    public static class ContainsI implements LInstruction{
+        public LVar value, part, output;
+        private final StringCache cache;
+
+        public ContainsI(LVar value, LVar part, LVar output){
+            this.value = value;
+            this.part = part;
+            this.output = output;
+            cache = new StringCache(value, part);
+        }
+
+        @Override
+        public void run(LExecutor exec){
+            if(cache.restore(output)) return;
+
+            cache.capture();
+            output.setbool(stringValue(value).contains(stringValue(part)));
+            cache.save(output);
+        }
+    }
+
     public static class PrintFlushI implements LInstruction{
         public LVar target;
 

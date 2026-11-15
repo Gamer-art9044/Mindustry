@@ -341,6 +341,133 @@ public class LStatements{
         }
     }
 
+    static abstract class StringStatement extends LStatement{
+        @Override
+        public LCategory category(){
+            return LCategory.strings;
+        }
+    }
+
+    @RegisterStatement("strlen")
+    public static class StrlenStatement extends StringStatement{
+        public String result = "result", value = "\"hello\"";
+
+        @Override
+        public void build(Table table){
+            field(table, result, v -> result = v);
+            table.add(" = strlen ");
+            field(table, value, v -> value = v);
+        }
+
+        @Override
+        public LInstruction build(LAssembler builder){
+            return new StrlenI(builder.var(value), builder.var(result));
+        }
+    }
+
+    @RegisterStatement("concat")
+    public static class ConcatStatement extends StringStatement{
+        public String result = "result", a = "\"hello\"", b = "\" world\"";
+
+        @Override
+        public void build(Table table){
+            field(table, result, v -> result = v);
+            table.add(" = concat ");
+            field(table, a, v -> a = v);
+            field(table, b, v -> b = v);
+        }
+
+        @Override
+        public LInstruction build(LAssembler builder){
+            return new ConcatI(builder.var(a), builder.var(b), builder.var(result));
+        }
+    }
+
+    @RegisterStatement("replace")
+    public static class ReplaceStatement extends StringStatement{
+        public String result = "result";
+        public String value = "\"banana\"", target = "\"an\"", replacement = "\"X\"";
+
+        @Override
+        public void build(Table table){
+            field(table, result, v -> result = v);
+            table.add(" = replace ");
+            field(table, value, v -> value = v);
+            field(table, target, v -> target = v);
+            field(table, replacement, v -> replacement = v);
+        }
+
+        @Override
+        public LInstruction build(LAssembler builder){
+            return new ReplaceI(
+                    builder.var(value),
+                    builder.var(target),
+                    builder.var(replacement),
+                    builder.var(result)
+            );
+        }
+    }
+
+    @RegisterStatement("split")
+    public static class SplitStatement extends StringStatement{
+        public String result = "result";
+        public String value = "\"apple,banana,cherry\"", separator = "\",\"", index = "0";
+
+        @Override
+        public void build(Table table){
+            field(table, result, v -> result = v);
+            table.add(" = split ");
+            field(table, value, v -> value = v);
+            field(table, separator, v -> separator = v);
+            field(table, index, v -> index = v);
+        }
+
+        @Override
+        public LInstruction build(LAssembler builder){
+            return new SplitI(
+                    builder.var(value),
+                    builder.var(separator),
+                    builder.var(index),
+                    builder.var(result)
+            );
+        }
+    }
+
+    @RegisterStatement("reverse")
+    public static class ReverseStatement extends StringStatement{
+        public String result = "result", value = "\"hello\"";
+
+        @Override
+        public void build(Table table){
+            field(table, result, v -> result = v);
+            table.add(" = reverse ");
+            field(table, value, v -> value = v);
+        }
+
+        @Override
+        public LInstruction build(LAssembler builder){
+            return new ReverseI(builder.var(value), builder.var(result));
+        }
+    }
+
+    @RegisterStatement("contains")
+    public static class ContainsStatement extends StringStatement{
+        public String result = "result", value = "\"hello world\"", part = "\"world\"";
+
+        @Override
+        public void build(Table table){
+            field(table, result, v -> result = v);
+            table.add(" = contains ");
+            field(table, value, v -> value = v);
+            field(table, part, v -> part = v);
+        }
+
+        @Override
+        public LInstruction build(LAssembler builder){
+            return new ContainsI(builder.var(value), builder.var(part), builder.var(result));
+        }
+    }
+
     @RegisterStatement("drawflush")
     public static class DrawFlushStatement extends LStatement{
         public String target = "display1";
